@@ -1,0 +1,91 @@
+import requests
+from bs4 import BeautifulSoup
+import requests
+import pandas as pd
+from datetime import date, timedelta, datetime
+import time
+
+url = 'https://www.pttweb.cc/bbs/Lifeismoney'
+response = requests.get(url)
+
+soup = BeautifulSoup(response.text, 'html.parser')
+threads = soup.find_all('div', {'class': 'mt-2'})
+
+result = pd.DataFrame()
+for thread in threads:
+    title_list = []
+    url_list = []
+    time_list = []
+    main_containers = thread.find_all('div', {'class': 'e7-container'})
+    for container in main_containers:
+        title_raw = container.find('div', {'class': 'e7-right-top-container e7-no-outline-all-descendants'}).text.strip()
+        title_processed = title_raw.split('\n')[0].strip()
+        url_raw = container.find('a',{'class' : 'e7-article-default'})
+        url_processed = url_raw['href']
+        url_final = 'https://www.pttweb.cc' + url_processed
+        title_list.append(title_processed)
+        url_list.append(url_final)
+    
+    time_containers = thread.find_all('div', {'class' : 'e7-meta-container'})
+    for container in time_containers:
+        time_raw = container.find_all('span', {'class': 'text-no-wrap'})
+        time_processed = time_raw[1].text.strip()
+        time_list.append(time_processed)
+
+result['title'] = title_list
+result['url'] = url_list
+result['time'] = time_list
+
+token = 'YOUR_LINE_TOKEN'
+
+def lineNotifyMessage(token, msg):
+
+    headers = {
+        "Authorization": "Bearer " + token, 
+        "Content-Type" : "application/x-www-form-urlencoded"
+    }
+
+    payload = {'message': msg }
+    r = requests.post("https://notify-api.line.me/api/notify", headers = headers, params = payload)
+    return r.status_code
+
+current_time = datetime.now()+ timedelta(hours=8)
+str_month = current_time.month
+str_day = current_time.day
+final_date = str(str_month)+"/"+str(str_day)
+if len(final_date) == 4:
+    final_date = "0"+final_date
+
+path = '/home/jerry/data/record.csv'
+first_df = pd.read_csv(path)
+first_title = first_df['title'].to_list()
+first_time = first_df['time'].to_list()
+first_url = first_df['url'].to_list()
+
+histories = {
+    'title' : [],
+    'time' : [],
+    'url' : []
+}
+
+for i in range(0, len(result)):
+     if 'goshare' in str(result['title'][i]).lower() and str(result['time'][i]) == final_date and str(result['title'][i]) not in first_title and str(result['time'][i]) not in first_time and str(result['url'][i]) not in first_url:
+        histories['title'].append(str(result['title'][i]))
+        histories['time'].append(str(result['time'][i]))
+        histories['url'].append(str(result['url'][i]))
+        message = '\nTitle: ' + result['title'][i] + '\n' + 'URL: ' + result['url'][i] + '\n' + 'Date: ' + result['time'][i]
+        lineNotifyMessage(token, message)
+
+
+for i in range(0, len(result)):
+    if 'foodpand' in str(result['title'][i]).lower() and str(result['time'][i]) == final_date and str(result['title'][i]) not in first_title and str(result['time'][i]) not in first_time and str(result['url'][i]) not in first_url:
+        histories['title'].append(str(result['title'][i]))
+        histories['time'].append(str(result['time'][i]))
+        histories['url'].append(str(result['url'][i]))
+        message = '\nTitle: ' + result['title'][i] + '\n' + 'URL: ' + result['url'][i] + '\n' + 'Date: ' + result['time'][i]
+        lineNotifyMessage(token, message)
+
+
+final_df = pd.DataFrame.from_dict(histories)
+final_df.to_csv(path, encoding="utf_8_sig")
+
