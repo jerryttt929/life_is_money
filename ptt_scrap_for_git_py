@@ -1,6 +1,5 @@
 import requests
 from bs4 import BeautifulSoup
-import requests
 import pandas as pd
 from datetime import date, timedelta, datetime
 import time
@@ -11,11 +10,11 @@ response = requests.get(url)
 soup = BeautifulSoup(response.text, 'html.parser')
 threads = soup.find_all('div', {'class': 'mt-2'})
 
-result = pd.DataFrame()
+title_list = []
+url_list = []
+time_list = []
+
 for thread in threads:
-    title_list = []
-    url_list = []
-    time_list = []
     main_containers = thread.find_all('div', {'class': 'e7-container'})
     for container in main_containers:
         title_raw = container.find('div', {'class': 'e7-right-top-container e7-no-outline-all-descendants'}).text.strip()
@@ -25,21 +24,22 @@ for thread in threads:
         url_final = 'https://www.pttweb.cc' + url_processed
         title_list.append(title_processed)
         url_list.append(url_final)
-    
+
     time_containers = thread.find_all('div', {'class' : 'e7-meta-container'})
     for container in time_containers:
         time_raw = container.find_all('span', {'class': 'text-no-wrap'})
         time_processed = time_raw[1].text.strip()
         time_list.append(time_processed)
 
-result['title'] = title_list
-result['url'] = url_list
-result['time'] = time_list
+result = pd.DataFrame({
+    'title': title_list,
+    'url': url_list,
+    'time': time_list
+})
 
-token = 'YOUR_LINE_TOKEN'
+token = 'LINE_NOTIFY_TOKEN'
 
 def lineNotifyMessage(token, msg):
-
     headers = {
         "Authorization": "Bearer " + token, 
         "Content-Type" : "application/x-www-form-urlencoded"
@@ -52,15 +52,19 @@ def lineNotifyMessage(token, msg):
 current_time = datetime.now()+ timedelta(hours=8)
 str_month = current_time.month
 str_day = current_time.day
+if str_month < 10:
+    str_month = "0"+str(str_month)
+    if str_day < 10:
+        str_day = "0"+str(str_day)
 final_date = str(str_month)+"/"+str(str_day)
-if len(final_date) == 4:
-    final_date = "0"+final_date
 
-path = '/home/jerry/data/record.csv'
+
+# Read from an empty csv with title/time/url title
+path = "PATH_TO_CSV_FILE" 
 first_df = pd.read_csv(path)
-first_title = first_df['title'].to_list()
-first_time = first_df['time'].to_list()
-first_url = first_df['url'].to_list()
+
+# Create a set of unique records in history
+history_set = set(zip(first_df['title'], first_df['time'], first_df['url']))
 
 histories = {
     'title' : [],
@@ -68,24 +72,19 @@ histories = {
     'url' : []
 }
 
-for i in range(0, len(result)):
-     if 'goshare' in str(result['title'][i]).lower() and str(result['time'][i]) == final_date and str(result['title'][i]) not in first_title and str(result['time'][i]) not in first_time and str(result['url'][i]) not in first_url:
-        histories['title'].append(str(result['title'][i]))
-        histories['time'].append(str(result['time'][i]))
-        histories['url'].append(str(result['url'][i]))
-        message = '\nTitle: ' + result['title'][i] + '\n' + 'URL: ' + result['url'][i] + '\n' + 'Date: ' + result['time'][i]
-        lineNotifyMessage(token, message)
+# insert the keyowrds here for scraper to search for
+keywords = ['goshare', 'foodpanda']
 
+for keyword in keywords:
+    for i in range(0, len(result)):
+         if keyword in str(result['title'][i]).lower() and str(result['time'][i]) == final_date and (str(result['title'][i]), str(result['time'][i]), str(result['url'][i])) not in history_set:
+            histories['title'].append(str(result['title'][i]))
+            histories['time'].append(str(result['time'][i]))
+            histories['url'].append(str(result['url'][i]))
+            history_set.add((str(result['title'][i]), str(result['time'][i]), str(result['url'][i])))
+            message = '\nTitle: ' + result['title'][i] + '\n' + 'URL: ' + result['url'][i] + '\n' + 'Date: ' + result['time'][i]
+            lineNotifyMessage(token, message)
 
-for i in range(0, len(result)):
-    if 'foodpand' in str(result['title'][i]).lower() and str(result['time'][i]) == final_date and str(result['title'][i]) not in first_title and str(result['time'][i]) not in first_time and str(result['url'][i]) not in first_url:
-        histories['title'].append(str(result['title'][i]))
-        histories['time'].append(str(result['time'][i]))
-        histories['url'].append(str(result['url'][i]))
-        message = '\nTitle: ' + result['title'][i] + '\n' + 'URL: ' + result['url'][i] + '\n' + 'Date: ' + result['time'][i]
-        lineNotifyMessage(token, message)
-
-
+# storing the records that have been found and not get notify again
 final_df = pd.DataFrame.from_dict(histories)
 final_df.to_csv(path, encoding="utf_8_sig")
-
